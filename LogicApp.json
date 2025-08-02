@@ -1,0 +1,166 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "Recurrence": {
+                "recurrence": {
+                    "interval": 1,
+                    "frequency": "Day",
+                    "timeZone": "W. Europe Standard Time",
+                    "schedule": {
+                        "hours": [
+                            8
+                        ],
+                        "minutes": [
+                            0
+                        ]
+                    }
+                },
+                "evaluatedRecurrence": {
+                    "interval": 1,
+                    "frequency": "Day",
+                    "timeZone": "W. Europe Standard Time",
+                    "schedule": {
+                        "hours": [
+                            8
+                        ],
+                        "minutes": [
+                            0
+                        ]
+                    }
+                },
+                "type": "Recurrence"
+            }
+        },
+        "actions": {
+            "List_files": {
+                "runAfter": {},
+                "metadata": {
+                    "JTJmZmlsZXMtdGVzdA==": "/files-test"
+                },
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azurefile']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/datasets/default/foldersV2/@{encodeURIComponent(encodeURIComponent('JTJmZmlsZXMtdGVzdA=='))}",
+                    "queries": {
+                        "nextPageMarker": "",
+                        "useFlatListing": false
+                    }
+                }
+            },
+            "Filter_array": {
+                "runAfter": {
+                    "List_files": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Query",
+                "inputs": {
+                    "from": "@body('List_files')?['value']",
+                    "where": "@lessOrEquals(item()?['LastModified'], addDays(utcNow(), -180))"
+                }
+            },
+            "For_each": {
+                "foreach": "@outputs('Filter_array')['body']",
+                "actions": {
+                    "Delete_file": {
+                        "type": "ApiConnection",
+                        "inputs": {
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azurefile']['connectionId']"
+                                }
+                            },
+                            "method": "delete",
+                            "headers": {
+                                "SkipDeleteIfFileNotFoundOnServer": false
+                            },
+                            "path": "/datasets/default/files/@{encodeURIComponent(encodeURIComponent(items('For_each')?['Path']))}"
+                        }
+                    }
+                },
+                "runAfter": {
+                    "Filter_array": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Foreach"
+            },
+            "Send_an_email_(V2)": {
+                "runAfter": {
+                    "Create_HTML_table": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['office365']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "body": {
+                        "To": "info@justinverstijnen.nl",
+                        "Subject": "FSLogix profiles cleanup report",
+                        "Body": "<p class=\"editor-paragraph\">The Logic App to cleanup FSLogix profiles has ran and cleaned up these files:</p><br><p class=\"editor-paragraph\">@{body('Create_HTML_table')}</p>",
+                        "Importance": "Normal"
+                    },
+                    "path": "/v2/Mail"
+                }
+            },
+            "Create_HTML_table": {
+                "runAfter": {
+                    "For_each": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Table",
+                "inputs": {
+                    "from": "@body('Filter_array')",
+                    "format": "HTML",
+                    "columns": [
+                        {
+                            "header": "File name",
+                            "value": "@item()?['Name']"
+                        },
+                        {
+                            "header": "Last logon date",
+                            "value": "@item()?['LastModified']"
+                        }
+                    ]
+                }
+            }
+        },
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "type": "Object",
+                "defaultValue": {}
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "type": "Object",
+            "value": {
+                "azurefile": {
+                    "id": "/subscriptions/fd09e454-a13e-4e8c-a00e-a54b1385e2bd/providers/Microsoft.Web/locations/westeurope/managedApis/azurefile",
+                    "connectionId": "/subscriptions/fd09e454-a13e-4e8c-a00e-a54b1385e2bd/resourceGroups/rg-jv-logicappcleanfiles/providers/Microsoft.Web/connections/azurefile",
+                    "connectionName": "azurefile"
+                },
+                "office365": {
+                    "id": "/subscriptions/fd09e454-a13e-4e8c-a00e-a54b1385e2bd/providers/Microsoft.Web/locations/westeurope/managedApis/office365",
+                    "connectionId": "/subscriptions/fd09e454-a13e-4e8c-a00e-a54b1385e2bd/resourceGroups/rg-jv-logicappcleanfiles/providers/Microsoft.Web/connections/office365",
+                    "connectionName": "office365"
+                }
+            }
+        }
+    }
+}
